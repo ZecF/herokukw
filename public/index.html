@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Autonomous deployment platform runnable on Heroku with in-dyno process virtualization, custom domain routing, and code editor.">
+  <title>Railflow PaaS: Autonomous Deployment Engine</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Host+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="app-shell">
+  <!-- Top Bar Navigation -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand-group">
+        <a href="#apps" class="brand-link" id="brand-home-link">
+          <span class="brand-mark">R</span>
+          <span>Railflow PaaS</span>
+        </a>
+        <span class="badge-host" id="host-badge">Heroku Dyno Target</span>
+      </div>
+
+      <div class="header-telemetry">
+        <div class="telemetry-item">
+          <span>Dyno:</span>
+          <span class="value" id="stat-dyno">web.1</span>
+        </div>
+        <div class="telemetry-item">
+          <span>Memory:</span>
+          <span class="value" id="stat-mem">-- MB</span>
+        </div>
+        <div class="telemetry-item">
+          <span>Uptime:</span>
+          <span class="value" id="stat-uptime">--</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm" id="btn-open-domains">Custom Domains</button>
+        <button class="btn btn-secondary btn-sm" id="btn-open-settings">Heroku Bridge</button>
+        <button class="btn btn-primary btn-sm" id="btn-open-deploy">+ New App</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-workspace">
+    <!-- VIEW 1: APPS LIST VIEW (DEFAULT) -->
+    <div id="view-apps-list">
+      <!-- Platform Stat Metrics -->
+      <section class="overview-bar" aria-label="Platform Telemetry Overview">
+        <div class="stat-cell">
+          <span class="stat-label">Active Deployments</span>
+          <span class="stat-number" id="metric-active-count">0</span>
+          <span class="stat-meta">Across in-dyno runtimes</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Custom Domains</span>
+          <span class="stat-number" id="metric-domains-count">0</span>
+          <span class="stat-meta">Host routing active</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Heap Consumption</span>
+          <span class="stat-number" id="metric-heap-mb">0 MB</span>
+          <span class="stat-meta">V8 memory footprint</span>
+        </div>
+        <div class="stat-cell">
+          <span class="stat-label">Total Traffic</span>
+          <span class="stat-number" id="metric-traffic-req">0</span>
+          <span class="stat-meta">Reverse proxied requests</span>
+        </div>
+      </section>
+
+      <!-- Apps Inventory Bar -->
+      <section class="services-section" style="margin-top: var(--space-xl);">
+        <div class="section-bar">
+          <div class="section-title-wrap">
+            <h2 class="section-heading">Personal Apps</h2>
+            <span class="count-indicator" id="service-count-badge">[3 apps]</span>
+          </div>
+          <div class="tab-filter-group" role="tablist">
+            <button class="tab-btn active" data-filter="all">All Apps</button>
+            <button class="tab-btn" data-filter="backend-node">Node.js</button>
+            <button class="tab-btn" data-filter="backend-python">Python</button>
+            <button class="tab-btn" data-filter="static">Static SPA</button>
+          </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div style="margin-block: var(--space-md);">
+          <input type="text" class="form-input" id="search-apps-input" placeholder="Filter apps by name, stack, or slug…" style="width: 100%;">
+        </div>
+
+        <div class="services-container">
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>App Identifier</th>
+                  <th>Stack Runtime</th>
+                  <th>Dyno Formation</th>
+                  <th>Region &amp; Port</th>
+                  <th>Latest Release</th>
+                  <th style="text-align: right;">Operations</th>
+                </tr>
+              </thead>
+              <tbody id="services-tbody">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- VIEW 2: APP DETAIL WORKSPACE (HEROKU-LIKE UX IN MODERN CONSOLE THEME) -->
+    <div id="view-app-detail" style="display: none;">
+      <!-- Detail Header -->
+      <section class="detail-header">
+        <div class="breadcrumb-nav">
+          <button class="breadcrumb-btn" id="btn-back-to-apps">Apps</button>
+          <span style="color: var(--color-muted);">/</span>
+          <span class="detail-title" id="app-detail-title">cdnvall</span>
+          <span class="badge-host" id="app-detail-runtime-badge">Node.js</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap;">
+          <button class="btn btn-secondary btn-sm" id="btn-detail-clear-session" title="Hapus session WhatsApp/auth dan generate QR baru">Hapus Session</button>
+          <button class="btn btn-secondary btn-sm" id="btn-detail-rebuild">Rebuild (npm install)</button>
+          <button class="btn btn-secondary btn-sm" id="btn-detail-restart">Restart Dynos</button>
+          <button class="btn btn-primary btn-sm" id="btn-detail-open-live">Open App ↗</button>
+        </div>
+      </section>
+
+      <!-- Subnavigation Tabs -->
+      <nav class="subnav-bar" aria-label="App Subnavigation">
+        <button class="subnav-tab active" data-subtab="overview">Overview</button>
+        <button class="subnav-tab" data-subtab="deploy">Deploy</button>
+        <button class="subnav-tab" data-subtab="logs">Logs &amp; Terminal</button>
+        <button class="subnav-tab" data-subtab="metrics">Metrics</button>
+        <button class="subnav-tab" data-subtab="settings">Settings</button>
+      </nav>
+
+      <!-- Subtab 1: Overview -->
+      <div id="pane-subtab-overview" style="margin-top: var(--space-lg);">
+        <div class="detail-grid">
+          <!-- Left Column: Dyno Formations & Domains -->
+          <div style="display: flex; flex-direction: column; gap: var(--space-lg);">
+            <!-- Dyno Formations Panel -->
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <span class="panel-card-title">Dyno Formations</span>
+                <span class="stat-meta">In-Dyno Process Virtualization</span>
+              </div>
+              <p class="stat-meta">Process types declared in runtime supervisor. Toggle to scale worker on or off.</p>
+              
+              <div class="formation-row">
+                <div class="formation-info">
+                  <div style="display: flex; align-items: center; gap: var(--space-xs);">
+                    <span style="font-weight: 600;" id="detail-proc-type">web</span>
+                    <span class="formation-cmd" id="detail-proc-cmd">node server.js</span>
+                  </div>
+                  <span class="stat-meta" id="detail-proc-meta">Allocated Port :4001 · Forwarded to /live/slug</span>
+                </div>
+                <div>
+                  <label class="switch-label" title="Scale Dyno ON / OFF">
+                    <input type="checkbox" id="detail-dyno-switch" checked>
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Custom Domains Panel -->
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <span class="panel-card-title">Custom Domains</span>
+                <button class="btn btn-secondary btn-sm" id="btn-detail-add-domain">+ Add Domain</button>
+              </div>
+              <p class="stat-meta">Host-header routing directs incoming domain traffic directly to this service.</p>
+              <div id="detail-domains-list">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Latest Activity Feed -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <span class="panel-card-title">Latest Activity</span>
+              <span class="stat-meta" id="detail-activity-count">Release History</span>
+            </div>
+            <div class="activity-feed" id="detail-activity-feed">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subtab 2: Deploy -->
+      <div id="pane-subtab-deploy" style="display: none; margin-top: var(--space-lg);">
+        <div class="detail-grid">
+          <!-- Manual Git Branch Deploy -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <span class="panel-card-title">Manual Deploy</span>
+              <span class="stat-meta">Deploy a GitHub branch</span>
+            </div>
+            <p class="stat-meta">This will trigger the build pipeline for the branch you specify below and reload the worker process.</p>
+            
+            <div class="form-group" style="margin-top: var(--space-xs);">
+              <label class="form-label" for="manual-deploy-branch">Choose a branch to deploy</label>
+              <div style="display: flex; gap: var(--space-xs);">
+                <select class="form-select" id="manual-deploy-branch" style="flex: 1;">
+                  <option value="main">main</option>
+                  <option value="master">master</option>
+                  <option value="staging">staging</option>
+                </select>
+                <button class="btn btn-primary btn-sm" id="btn-trigger-branch-deploy">Deploy Branch</button>
+              </div>
+            </div>
+
+            <div style="margin-top: var(--space-md); padding-top: var(--space-md); border-top: var(--rule-hair) solid var(--color-rule);">
+              <span class="panel-card-title" style="display: block; margin-bottom: var(--space-2xs);">Automatic Deploys</span>
+              <p class="stat-meta">Every push to the main branch automatically builds and releases a new version.</p>
+              <div style="margin-top: var(--space-xs);">
+                <label style="display: flex; align-items: center; gap: var(--space-xs); font-size: var(--text-xs); cursor: pointer;">
+                  <input type="checkbox" checked id="auto-deploy-checkbox">
+                  <span>Enable Automatic Deploys from GitHub</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- In-Browser Code Editor & Archive -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <span class="panel-card-title">In-Browser Code Editor</span>
+              <button class="btn btn-secondary btn-sm" id="btn-detail-open-editor">Open Editor</button>
+            </div>
+            <p class="stat-meta">Directly modify source files (e.g. index.js, app.py, HTML) and execute an instant hot-redeploy without leaving the dashboard.</p>
+            
+            <div style="margin-top: var(--space-md); padding-top: var(--space-md); border-top: var(--rule-hair) solid var(--color-rule);">
+              <span class="panel-card-title" style="display: block; margin-bottom: var(--space-2xs);">Upload ZIP Bundle</span>
+              <p class="stat-meta">Replace service code by dropping a new project archive.</p>
+              <button class="btn btn-secondary btn-sm" style="margin-top: var(--space-xs);" id="btn-detail-trigger-upload">Upload .ZIP Archive</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subtab 3: Logs -->
+      <div id="pane-subtab-logs" style="display: none; margin-top: var(--space-lg);">
+        <div class="terminal-panel" style="height: 540px;">
+          <div class="console-toolbar">
+            <div class="terminal-title-group">
+              <span class="terminal-title">App Output &amp; Build Logs</span>
+              <span class="count-indicator" id="terminal-active-indicator">Streaming</span>
+            </div>
+            <div class="terminal-controls">
+              <button class="btn btn-secondary btn-sm" id="btn-clear-detail-logs">Clear</button>
+              <button class="btn btn-secondary btn-sm" id="btn-copy-detail-logs">Copy</button>
+            </div>
+          </div>
+          <div class="terminal-body" id="detail-terminal-output">
+            <div class="log-line system">
+              <span class="ts">[00:00:00]</span>
+              <span>Attaching to dyno telemetry stream…</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subtab 4: Metrics -->
+      <div id="pane-subtab-metrics" style="display: none; margin-top: var(--space-lg);">
+        <div class="overview-bar">
+          <div class="stat-cell">
+            <span class="stat-label">Process Memory</span>
+            <span class="stat-number" id="detail-metric-mem">34 MB</span>
+            <span class="stat-meta">Resident Set Size</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-label">HTTP Ingress</span>
+            <span class="stat-number" id="detail-metric-req">412</span>
+            <span class="stat-meta">Proxied requests</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-label">Process Uptime</span>
+            <span class="stat-number" id="detail-metric-uptime">1h 12m</span>
+            <span class="stat-meta">Since last boot</span>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-label">Process State</span>
+            <span class="stat-number" id="detail-metric-status" style="color: var(--color-ok);">Healthy</span>
+            <span class="stat-meta">PID active</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subtab 5: Settings -->
+      <div id="pane-subtab-settings" style="display: none; margin-top: var(--space-lg);">
+        <div style="display: flex; flex-direction: column; gap: var(--space-lg);">
+          <!-- Config Vars Panel -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <span class="panel-card-title">Config Vars (Environment Variables)</span>
+              <button class="btn btn-secondary btn-sm" id="btn-reveal-config-vars">Reveal Config Vars</button>
+            </div>
+            <p class="stat-meta">Environment variables injected into your dyno at runtime. Updating variables restarts the dyno.</p>
+
+            <div id="config-vars-container" style="display: none; margin-top: var(--space-xs);">
+              <div class="form-group">
+                <label class="form-label" for="detail-config-vars-textarea">KEY=VALUE matrix</label>
+                <textarea class="form-textarea" id="detail-config-vars-textarea" rows="6"></textarea>
+              </div>
+              <button class="btn btn-primary btn-sm" style="margin-top: var(--space-xs); align-self: flex-start;" id="btn-save-detail-config">Apply Config</button>
+            </div>
+          </div>
+
+          <!-- Session & State Management -->
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <span class="panel-card-title">Session &amp; Auth State Management</span>
+              <button class="btn btn-secondary btn-sm" id="btn-settings-clear-session">Hapus Session</button>
+            </div>
+            <p class="stat-meta">Hapus file session bot / autentikasi (folder <code>state</code>, <code>auth</code>, <code>sessions</code>, <code>creds.json</code>). Sangat berguna ketika session WhatsApp terputus (401), ingin ganti nomor HP, atau memunculkan pairing QR code baru.</p>
+          </div>
+
+          <!-- Danger Zone -->
+          <div class="panel-card" style="border-color: var(--color-bad);">
+            <div class="panel-card-header">
+              <span class="panel-card-title" style="color: var(--color-bad);">Delete App</span>
+            </div>
+            <p class="stat-meta">Permanently delete this app and all associated deployment files. This action cannot be undone.</p>
+            <div>
+              <button class="btn btn-danger btn-sm" id="btn-danger-delete-app">Delete this app…</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal: Custom Domains Manager -->
+  <div class="modal-backdrop" id="domains-modal" style="display: none;">
+    <div class="modal-dialog" style="max-width: 720px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Custom Domain Routing</h3>
+        <button class="btn btn-secondary btn-sm" id="btn-close-domains">Close</button>
+      </div>
+      <div class="modal-body">
+        <p class="stat-meta">Connect your custom domain (e.g. api.yourdomain.com or myapp.id). Railflow routes incoming HTTP traffic by matching the Host header directly to the allocated service container.</p>
+
+        <!-- DNS Target Instruction -->
+        <div class="dns-box">
+          <span style="font-weight: 600;">DNS Target Record</span>
+          <div class="dns-grid">
+            <div class="dns-cell">
+              <span class="stat-meta">Record Type</span>
+              <span>CNAME</span>
+            </div>
+            <div class="dns-cell">
+              <span class="stat-meta">Host / Name</span>
+              <span>@ or subdomain</span>
+            </div>
+            <div class="dns-cell">
+              <span class="stat-meta">Points To Target</span>
+              <span id="dns-target-val" style="color: var(--color-accent);">your-app.herokuapp.com</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add Domain Form -->
+        <div class="form-group" style="margin-top: var(--space-xs);">
+          <label class="form-label" for="new-domain-input">New Domain Name</label>
+          <div style="display: flex; gap: var(--space-xs);">
+            <input type="text" class="form-input" id="new-domain-input" placeholder="api.mydomain.com" style="flex: 1;">
+            <select class="form-select" id="new-domain-service-select" style="width: 200px;">
+              <!-- Populated dynamically -->
+            </select>
+            <button class="btn btn-primary btn-sm" id="btn-submit-domain">Add Domain</button>
+          </div>
+        </div>
+
+        <!-- Active Domains Table -->
+        <div style="margin-top: var(--space-md);">
+          <label class="form-label">Mapped Custom Domains</label>
+          <div class="table-responsive" style="margin-top: var(--space-2xs); border: var(--rule-hair) solid var(--color-rule); border-radius: 4px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Domain</th>
+                  <th>Target App</th>
+                  <th>Status</th>
+                  <th>SSL</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="domains-tbody">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btn-cancel-domains">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: In-Browser Code Editor -->
+  <div class="modal-backdrop" id="editor-modal" style="display: none;">
+    <div class="modal-dialog" style="max-width: 800px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: baseline; gap: var(--space-sm);">
+          <h3 class="modal-title" id="editor-modal-title">Live Editor &amp; Hot Redeploy</h3>
+          <span class="count-indicator" id="editor-service-indicator">service</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btn-close-editor">Close</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);">
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label" for="editor-file-select">Source File</label>
+            <select class="form-select" id="editor-file-select">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1.5;">
+            <label class="form-label" for="editor-commit-msg">Commit Message</label>
+            <input type="text" class="form-input" id="editor-commit-msg" placeholder="feat: update handler logic">
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: var(--space-xs);">
+          <label class="form-label" for="editor-code-textarea">Code Buffer</label>
+          <textarea class="code-editor-area" id="editor-code-textarea" spellcheck="false"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btn-cancel-editor">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-save-redeploy">Save &amp; Hot Redeploy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create New App -->
+  <div class="modal-backdrop" id="deploy-modal" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Create New App</h3>
+        <button class="btn btn-secondary btn-sm" id="btn-close-deploy">Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="tab-filter-group" style="margin-bottom: var(--space-sm);">
+          <button class="tab-btn active" id="tab-deploy-template">Starter Template</button>
+          <button class="tab-btn" id="tab-deploy-upload">Drop ZIP Archive</button>
+          <button class="tab-btn" id="tab-deploy-git">Git Repository</button>
+        </div>
+
+        <!-- Tab 1: Templates -->
+        <div id="pane-deploy-template">
+          <div class="form-group" style="margin-bottom: var(--space-md);">
+            <label class="form-label">Select Architecture</label>
+            <div class="template-grid">
+              <div class="template-card selected" data-template="express-api">
+                <span class="template-name">Node Express REST</span>
+                <span class="template-desc">API with JSON item routes and health probes</span>
+              </div>
+              <div class="template-card" data-template="python-api">
+                <span class="template-name">Python Microservice</span>
+                <span class="template-desc">Lightweight HTTP worker with telemetry endpoint</span>
+              </div>
+              <div class="template-card" data-template="static-spa">
+                <span class="template-name">Static Web Application</span>
+                <span class="template-desc">HTML5 client SPA with instant subpath routing</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: var(--space-md);">
+            <label class="form-label" for="tpl-service-name">App Name</label>
+            <input type="text" class="form-input" id="tpl-service-name" placeholder="my-service-api" value="new-app-01">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="tpl-service-slug">Route Slug</label>
+            <input type="text" class="form-input" id="tpl-service-slug" placeholder="my-api" value="new-app-01">
+            <span class="stat-meta" style="margin-top: 4px;">App will be live at /live/&lt;slug&gt;</span>
+          </div>
+        </div>
+
+        <!-- Tab 2: Upload Archive -->
+        <div id="pane-deploy-upload" style="display: none;">
+          <div class="dropzone" id="upload-dropzone">
+            <input type="file" id="upload-file-input" accept=".zip,.tar.gz,.tgz,.tar" style="display: none;">
+            <span class="dropzone-label">Select or drop a .ZIP or .TAR.GZ archive</span>
+            <span class="dropzone-hint">Supports Node.js, Python, or Static project packages (.zip, .tar.gz, .tgz, .tar)</span>
+            <span class="badge-host" id="selected-file-label" style="display: none; margin-top: 8px;">No file selected</span>
+          </div>
+
+          <div class="form-group" style="margin-top: var(--space-md);">
+            <label class="form-label" for="zip-service-name">App Name</label>
+            <input type="text" class="form-input" id="zip-service-name" placeholder="custom-service">
+          </div>
+
+          <div class="form-group" style="margin-top: var(--space-md);">
+            <label class="form-label" for="zip-runtime-select">Runtime Stack</label>
+            <select class="form-select" id="zip-runtime-select">
+              <option value="backend-node">Node.js (node index.js / server.js)</option>
+              <option value="backend-python">Python (python app.py)</option>
+              <option value="static">Static Website (HTML/CSS/JS build)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tab 3: Git Repo -->
+        <div id="pane-deploy-git" style="display: none;">
+          <div class="form-group" style="margin-bottom: var(--space-md);">
+            <label class="form-label" for="git-repo-url">Git Repository URL</label>
+            <input type="text" class="form-input" id="git-repo-url" placeholder="https://github.com/username/repo">
+          </div>
+          <div class="form-group" style="margin-bottom: var(--space-md);">
+            <label class="form-label" for="git-branch">Branch</label>
+            <input type="text" class="form-input" id="git-branch" value="main">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="git-start-cmd">Start Command</label>
+            <input type="text" class="form-input" id="git-start-cmd" value="node server.js">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btn-cancel-deploy">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-submit-deploy">Create App</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Heroku Bridge Settings -->
+  <div class="modal-backdrop" id="settings-modal" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Heroku Platform Bridge</h3>
+        <button class="btn btn-secondary btn-sm" id="btn-close-settings">Close</button>
+      </div>
+      <div class="modal-body">
+        <p class="stat-meta">When running on Heroku, in-dyno process virtualization executes automatically. Provide your API Key below to orchestrate external Heroku apps directly via Heroku Platform API.</p>
+        <div class="form-group" style="margin-top: var(--space-md);">
+          <label class="form-label" for="heroku-api-key">Heroku API Key (Optional)</label>
+          <input type="password" class="form-input" id="heroku-api-key" placeholder="Bearer HRKU-xxxxxxxx">
+        </div>
+        <div class="form-group" style="margin-top: var(--space-md);">
+          <label class="form-label" for="heroku-app-target">Default Target App Name</label>
+          <input type="text" class="form-input" id="heroku-app-target" placeholder="my-fleet-app">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="btn-cancel-settings">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-save-settings">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer Masthead -->
+  <footer class="app-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span>Railflow PaaS Engine</span>
+        <span>·</span>
+        <span>Heroku Deployable Container</span>
+      </div>
+      <div>
+        <span>Dual Runtimes: In-Dyno Virtualization + Custom Domain Routing</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
